@@ -23,7 +23,7 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
-    // Limpar qualquer cache local primeiro
+    console.log('🚀 Inicializando aplicação...')
     clearLocalCache()
     loadProducts()
     setupEventListeners()
@@ -44,13 +44,12 @@ function clearLocalCache() {
 
 // Configurar sincronização em tempo real
 function setupRealtimeSubscription() {
-    // Criar canal para escutar mudanças na tabela produtos_estoque
     realtimeChannel = supabase
         .channel('produtos_estoque_changes')
         .on(
             'postgres_changes',
             {
-                event: '*', // Escuta INSERT, UPDATE, DELETE
+                event: '*',
                 schema: 'public',
                 table: 'produtos_estoque'
             },
@@ -73,7 +72,6 @@ function handleRealtimeChange(payload) {
     
     switch (eventType) {
         case 'INSERT':
-            // Novo produto adicionado
             if (newRecord) {
                 allProducts.push(newRecord)
                 allProducts.sort((a, b) => a.nome.localeCompare(b.nome))
@@ -85,7 +83,6 @@ function handleRealtimeChange(payload) {
             break
             
         case 'UPDATE':
-            // Produto atualizado
             if (newRecord) {
                 const index = allProducts.findIndex(p => p.id === newRecord.id)
                 if (index !== -1) {
@@ -99,7 +96,6 @@ function handleRealtimeChange(payload) {
             break
             
         case 'DELETE':
-            // Produto removido
             if (oldRecord) {
                 allProducts = allProducts.filter(p => p.id !== oldRecord.id)
                 updateFilteredProducts()
@@ -136,14 +132,13 @@ function updateLastUpdateTime() {
     lastUpdateTime.textContent = formattedTime
     lastUpdateContainer.style.display = 'block'
     
-    // Adicionar efeito visual de atualização
     lastUpdateContainer.style.animation = 'none'
     setTimeout(() => {
         lastUpdateContainer.style.animation = 'pulse 0.5s ease-in-out'
     }, 10)
 }
 
-// Carregar produtos do Supabase (SEMPRE do banco, nunca cache)
+// Carregar produtos do Supabase
 async function loadProducts() {
     try {
         showLoading(true)
@@ -151,7 +146,6 @@ async function loadProducts() {
         
         console.log('🔄 Carregando produtos diretamente do Supabase...')
         
-        // Forçar nova consulta ao banco (sem cache)
         const { data, error } = await supabase
             .from('produtos_estoque')
             .select('*')
@@ -161,16 +155,13 @@ async function loadProducts() {
             throw error
         }
 
-        // Limpar completamente os arrays antes de popular
         allProducts = []
         filteredProducts = []
         
-        // Popular com dados frescos do banco
         allProducts = data || []
         filteredProducts = [...allProducts]
         
         console.log(`✅ ${allProducts.length} produtos carregados do banco de dados`)
-        console.log('Produtos encontrados:', allProducts.map(p => p.nome))
         
         renderProducts()
         updateLastUpdateTime()
@@ -184,36 +175,98 @@ async function loadProducts() {
 }
 
 // Função para forçar recarregamento completo
-window.forceRefresh = async function() {
+function forceRefresh() {
     console.log('🔄 Forçando atualização completa...')
     clearLocalCache()
-    await loadProducts()
+    loadProducts()
 }
+
+// Expor função globalmente
+window.forceRefresh = forceRefresh
 
 // Atualizar estoque no Supabase
 async function updateStock(productId, newStock) {
     try {
-        const { error } = await supabase
+        console.log(`🔄 Atualizando estoque do produto ${productId} para ${newStock}`)
+        
+        const { data, error } = await supabase
             .from('produtos_estoque')
             .update({ 
                 estoque_atual: newStock,
                 updated_at: new Date().toISOString()
             })
             .eq('id', productId)
+            .select()
 
         if (error) {
             throw error
         }
 
-        // Não precisamos mais atualizar o estado local aqui
-        // O Supabase Realtime vai fazer isso automaticamente
-        console.log('✅ Estoque atualizado no banco de dados')
+        console.log('✅ Estoque atualizado no banco de dados:', data)
         
     } catch (error) {
-        console.error('Erro ao atualizar estoque:', error)
+        console.error('❌ Erro ao atualizar estoque:', error)
         showError('Erro ao atualizar estoque: ' + error.message)
+        
+        // Recarregar produtos em caso de erro para manter sincronização
+        await loadProducts()
     }
 }
+
+// Alternar disponibilidade
+async function toggleAvailability(productId, newAvailability) {
+    try {
+        console.log(`🔄 Alterando disponibilidade do produto ${productId} para ${newAvailability}`)
+        
+        const { data, error } = await supabase
+            .from('produtos_estoque')
+            .update({ 
+                disponivel: newAvailability,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', productId)
+            .select()
+
+        if (error) {
+            throw error
+        }
+
+        console.log('✅ Disponibilidade atualizada no banco de dados:', data)
+        
+    } catch (error) {
+        console.error('❌ Erro ao alterar disponibilidade:', error)
+        showError('Erro ao alterar disponibilidade: ' + error.message)
+        
+        // Recarregar produtos em caso de erro para manter sincronização
+        await loadProducts()
+    }
+}
+
+// Alterar estoque - FUNÇÃO PRINCIPAL DOS BOTÕES
+async function changeStock(productId, change) {
+    console.log(`🎯 changeStock chamada: productId=${productId}, change=${change}`)
+    
+    const product = allProducts.find(p => p.id === productId)
+    if (!product) {
+        console.error('❌ Produto não encontrado:', productId)
+        return
+    }
+
+    const newStock = Math.max(0, product.estoque_atual + change)
+    console.log(`📊 Estoque atual: ${product.estoque_atual}, Novo estoque: ${newStock}`)
+    
+    // Atualizar imediatamente na interface para feedback visual
+    product.estoque_atual = newStock
+    updateFilteredProducts()
+    renderProducts()
+    
+    // Atualizar no banco de dados
+    await updateStock(productId, newStock)
+}
+
+// Expor funções globalmente para uso nos botões HTML
+window.changeStock = changeStock
+window.toggleAvailability = toggleAvailability
 
 // Busca de produtos
 function handleSearch() {
@@ -240,11 +293,9 @@ function renderProducts() {
     noResultsContainer.style.display = 'none'
 
     if (isMobile()) {
-        // Renderizar como cards no mobile
         productsTable.style.display = 'none'
         renderCards()
     } else {
-        // Renderizar como tabela no desktop
         cardsContainer.innerHTML = ''
         productsTable.style.display = 'table'
         renderTable()
@@ -359,40 +410,6 @@ function renderCards() {
     }).join('')
 }
 
-// Alterar estoque
-window.changeStock = async function(productId, change) {
-    const product = allProducts.find(p => p.id === productId)
-    if (!product) return
-
-    const newStock = Math.max(0, product.estoque_atual + change)
-    await updateStock(productId, newStock)
-}
-
-// Alternar disponibilidade
-window.toggleAvailability = async function(productId, newAvailability) {
-    try {
-        const { error } = await supabase
-            .from('produtos_estoque')
-            .update({ 
-                disponivel: newAvailability,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', productId)
-
-        if (error) {
-            throw error
-        }
-
-        // Não precisamos mais atualizar o estado local aqui
-        // O Supabase Realtime vai fazer isso automaticamente
-        console.log('✅ Disponibilidade atualizada no banco de dados')
-        
-    } catch (error) {
-        console.error('Erro ao alterar disponibilidade:', error)
-        showError('Erro ao alterar disponibilidade: ' + error.message)
-    }
-}
-
 // Utilitários
 function showLoading(show) {
     loadingContainer.style.display = show ? 'block' : 'none'
@@ -424,3 +441,9 @@ window.addEventListener('beforeunload', () => {
         console.log('🔌 Desconectado do Supabase Realtime')
     }
 })
+
+// Debug: Verificar se as funções estão disponíveis globalmente
+console.log('🔍 Funções globais disponíveis:')
+console.log('- changeStock:', typeof window.changeStock)
+console.log('- toggleAvailability:', typeof window.toggleAvailability)
+console.log('- forceRefresh:', typeof window.forceRefresh)
