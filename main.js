@@ -24,10 +24,20 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando aplicação...')
+    console.log('🔧 Supabase URL:', supabaseUrl ? 'Configurado' : 'NÃO CONFIGURADO')
+    console.log('🔧 Supabase Key:', supabaseKey ? 'Configurado' : 'NÃO CONFIGURADO')
+    
     clearLocalCache()
     loadProducts()
     setupEventListeners()
     setupRealtimeSubscription()
+    
+    // Verificar se as funções estão disponíveis
+    setTimeout(() => {
+        console.log('🔍 Verificando funções globais:')
+        console.log('- changeStock:', typeof window.changeStock)
+        console.log('- toggleAvailability:', typeof window.toggleAvailability)
+    }, 1000)
 })
 
 // Event Listeners
@@ -75,7 +85,6 @@ function handleRealtimeChange(payload) {
     switch (eventType) {
         case 'INSERT':
             if (newRecord) {
-                // Verificar se o produto já existe para evitar duplicatas
                 const existingIndex = allProducts.findIndex(p => p.id === newRecord.id)
                 if (existingIndex === -1) {
                     allProducts.push(newRecord)
@@ -207,43 +216,38 @@ function forceRefresh() {
 // Expor função globalmente
 window.forceRefresh = forceRefresh
 
-// Atualizar estoque no Supabase
-async function updateStock(productId, newStock) {
-    try {
-        console.log(`🔄 Atualizando estoque do produto ${productId} para ${newStock}`)
-        
-        const { data, error } = await supabase
-            .from('produtos_estoque')
-            .update({ 
-                estoque_atual: newStock,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', productId)
-            .select()
-
-        if (error) {
-            throw error
-        }
-
-        console.log('✅ Estoque atualizado no banco de dados:', data)
-        
-        // Não atualizar interface aqui - deixar o realtime fazer isso
-        // para garantir sincronização correta
-        
-    } catch (error) {
-        console.error('❌ Erro ao atualizar estoque:', error)
-        showError('Erro ao atualizar estoque: ' + error.message)
-        
-        // Recarregar produtos em caso de erro para manter sincronização
-        await loadProducts()
+// FUNÇÃO PRINCIPAL: Alterar estoque
+async function changeStock(productId, change) {
+    console.log(`🎯 BOTÃO CLICADO! changeStock(${productId}, ${change})`)
+    
+    // Verificar se o produto existe
+    const product = allProducts.find(p => p.id === productId)
+    if (!product) {
+        console.error('❌ Produto não encontrado:', productId)
+        console.log('📋 Produtos disponíveis:', allProducts.map(p => ({ id: p.id, nome: p.nome })))
+        return
     }
+
+    const newStock = Math.max(0, product.estoque_atual + change)
+    console.log(`📊 ${product.nome}: ${product.estoque_atual} → ${newStock}`)
+    
+    // Atualizar no banco
+    await updateStock(productId, newStock)
 }
 
-// Alternar disponibilidade
+// FUNÇÃO PRINCIPAL: Alternar disponibilidade
 async function toggleAvailability(productId, newAvailability) {
+    console.log(`🎯 BOTÃO DISPONIBILIDADE CLICADO! toggleAvailability(${productId}, ${newAvailability})`)
+    
+    const product = allProducts.find(p => p.id === productId)
+    if (!product) {
+        console.error('❌ Produto não encontrado:', productId)
+        return
+    }
+
+    console.log(`🔄 ${product.nome}: ${product.disponivel} → ${newAvailability}`)
+    
     try {
-        console.log(`🔄 Alterando disponibilidade do produto ${productId} para ${newAvailability}`)
-        
         const { data, error } = await supabase
             .from('produtos_estoque')
             .update({ 
@@ -257,39 +261,44 @@ async function toggleAvailability(productId, newAvailability) {
             throw error
         }
 
-        console.log('✅ Disponibilidade atualizada no banco de dados:', data)
-        
-        // Não atualizar interface aqui - deixar o realtime fazer isso
-        // para garantir sincronização correta
+        console.log('✅ Disponibilidade atualizada:', data)
         
     } catch (error) {
         console.error('❌ Erro ao alterar disponibilidade:', error)
         showError('Erro ao alterar disponibilidade: ' + error.message)
-        
-        // Recarregar produtos em caso de erro para manter sincronização
         await loadProducts()
     }
 }
 
-// Alterar estoque - FUNÇÃO PRINCIPAL DOS BOTÕES
-async function changeStock(productId, change) {
-    console.log(`🎯 changeStock chamada: productId=${productId}, change=${change}`)
-    
-    const product = allProducts.find(p => p.id === productId)
-    if (!product) {
-        console.error('❌ Produto não encontrado:', productId)
-        return
-    }
+// Atualizar estoque no Supabase
+async function updateStock(productId, newStock) {
+    try {
+        console.log(`🔄 Enviando para Supabase: produto ${productId} → estoque ${newStock}`)
+        
+        const { data, error } = await supabase
+            .from('produtos_estoque')
+            .update({ 
+                estoque_atual: newStock,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', productId)
+            .select()
 
-    const newStock = Math.max(0, product.estoque_atual + change)
-    console.log(`📊 Produto: ${product.nome}, Estoque atual: ${product.estoque_atual}, Novo estoque: ${newStock}`)
-    
-    // Não atualizar interface imediatamente - deixar o realtime fazer isso
-    // para evitar inconsistências
-    await updateStock(productId, newStock)
+        if (error) {
+            console.error('❌ Erro do Supabase:', error)
+            throw error
+        }
+
+        console.log('✅ Resposta do Supabase:', data)
+        
+    } catch (error) {
+        console.error('❌ Erro ao atualizar estoque:', error)
+        showError('Erro ao atualizar estoque: ' + error.message)
+        await loadProducts()
+    }
 }
 
-// Expor funções globalmente para uso nos botões HTML
+// Expor funções globalmente - CRÍTICO PARA OS BOTÕES FUNCIONAREM
 window.changeStock = changeStock
 window.toggleAvailability = toggleAvailability
 
@@ -306,7 +315,7 @@ function isMobile() {
 
 // Renderizar produtos na tabela ou cards
 function renderProducts() {
-    console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela`)
+    console.log(`🎨 Renderizando ${filteredProducts.length} produtos`)
     
     if (filteredProducts.length === 0) {
         productsTable.style.display = 'none'
@@ -329,6 +338,8 @@ function renderProducts() {
 
 // Renderizar tabela (desktop)
 function renderTable() {
+    console.log('🖥️ Renderizando tabela desktop')
+    
     productsTableBody.innerHTML = filteredProducts.map(product => {
         const isLowStock = product.estoque_atual <= product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
@@ -343,14 +354,14 @@ function renderTable() {
                     <div class="stock-controls">
                         <button 
                             class="stock-btn decrease" 
-                            onclick="changeStock('${product.id}', -1)"
+                            onclick="console.log('🔴 Botão - clicado'); window.changeStock('${product.id}', -1)"
                             ${product.estoque_atual <= 0 ? 'disabled' : ''}
                             title="Diminuir estoque"
                         >−</button>
                         <span class="stock-current ${stockClass}">${product.estoque_atual}</span>
                         <button 
                             class="stock-btn increase" 
-                            onclick="changeStock('${product.id}', 1)"
+                            onclick="console.log('🟢 Botão + clicado'); window.changeStock('${product.id}', 1)"
                             title="Aumentar estoque"
                         >+</button>
                     </div>
@@ -364,7 +375,7 @@ function renderTable() {
                 <td>
                     <button 
                         class="action-btn ${product.disponivel ? 'decrease' : 'increase'}"
-                        onclick="toggleAvailability('${product.id}', ${!product.disponivel})"
+                        onclick="console.log('🔄 Botão disponibilidade clicado'); window.toggleAvailability('${product.id}', ${!product.disponivel})"
                         title="${product.disponivel ? 'Marcar como indisponível' : 'Marcar como disponível'}"
                     >
                         ${product.disponivel ? '🚫' : '✅'}
@@ -373,10 +384,14 @@ function renderTable() {
             </tr>
         `
     }).join('')
+    
+    console.log('✅ Tabela renderizada com', filteredProducts.length, 'produtos')
 }
 
 // Renderizar cards (mobile)
 function renderCards() {
+    console.log('📱 Renderizando cards mobile')
+    
     cardsContainer.innerHTML = filteredProducts.map(product => {
         const isLowStock = product.estoque_atual <= product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
@@ -406,13 +421,13 @@ function renderCards() {
                     <div class="card-stock-controls">
                         <button 
                             class="stock-btn decrease" 
-                            onclick="changeStock('${product.id}', -1)"
+                            onclick="console.log('🔴 Card - clicado'); window.changeStock('${product.id}', -1)"
                             ${product.estoque_atual <= 0 ? 'disabled' : ''}
                             title="Diminuir estoque"
                         >−</button>
                         <button 
                             class="stock-btn increase" 
-                            onclick="changeStock('${product.id}', 1)"
+                            onclick="console.log('🟢 Card + clicado'); window.changeStock('${product.id}', 1)"
                             title="Aumentar estoque"
                         >+</button>
                     </div>
@@ -424,7 +439,7 @@ function renderCards() {
                     </div>
                     <button 
                         class="action-btn ${product.disponivel ? 'decrease' : 'increase'}"
-                        onclick="toggleAvailability('${product.id}', ${!product.disponivel})"
+                        onclick="console.log('🔄 Card disponibilidade clicado'); window.toggleAvailability('${product.id}', ${!product.disponivel})"
                         title="${product.disponivel ? 'Marcar como indisponível' : 'Marcar como disponível'}"
                     >
                         ${product.disponivel ? '🚫' : '✅'}
@@ -433,6 +448,8 @@ function renderCards() {
             </div>
         `
     }).join('')
+    
+    console.log('✅ Cards renderizados com', filteredProducts.length, 'produtos')
 }
 
 // Utilitários
@@ -467,8 +484,9 @@ window.addEventListener('beforeunload', () => {
     }
 })
 
-// Debug: Verificar se as funções estão disponíveis globalmente
-console.log('🔍 Funções globais disponíveis:')
+// Debug final
+console.log('🔍 Script carregado completamente')
+console.log('🔍 Funções globais registradas:')
 console.log('- changeStock:', typeof window.changeStock)
 console.log('- toggleAvailability:', typeof window.toggleAvailability)
 console.log('- forceRefresh:', typeof window.forceRefresh)
