@@ -8,6 +8,7 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 // Estado da aplicação
 let allProducts = []
 let filteredProducts = []
+let realtimeChannel = null
 
 // Elementos DOM
 const searchInput = document.getElementById('searchInput')
@@ -23,11 +24,94 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 document.addEventListener('DOMContentLoaded', () => {
     loadProducts()
     setupEventListeners()
+    setupRealtimeSubscription()
 })
 
 // Event Listeners
 function setupEventListeners() {
     searchInput.addEventListener('input', handleSearch)
+}
+
+// Configurar sincronização em tempo real
+function setupRealtimeSubscription() {
+    // Criar canal para escutar mudanças na tabela produtos_estoque
+    realtimeChannel = supabase
+        .channel('produtos_estoque_changes')
+        .on(
+            'postgres_changes',
+            {
+                event: '*', // Escuta INSERT, UPDATE, DELETE
+                schema: 'public',
+                table: 'produtos_estoque'
+            },
+            (payload) => {
+                console.log('Mudança detectada:', payload)
+                handleRealtimeChange(payload)
+            }
+        )
+        .subscribe((status) => {
+            console.log('Status da conexão realtime:', status)
+            if (status === 'SUBSCRIBED') {
+                console.log('✅ Conectado ao Supabase Realtime')
+            }
+        })
+}
+
+// Processar mudanças em tempo real
+function handleRealtimeChange(payload) {
+    const { eventType, new: newRecord, old: oldRecord } = payload
+    
+    switch (eventType) {
+        case 'INSERT':
+            // Novo produto adicionado
+            if (newRecord) {
+                allProducts.push(newRecord)
+                allProducts.sort((a, b) => a.nome.localeCompare(b.nome))
+                updateFilteredProducts()
+                renderProducts()
+                updateLastUpdateTime()
+                console.log('✅ Novo produto adicionado:', newRecord.nome)
+            }
+            break
+            
+        case 'UPDATE':
+            // Produto atualizado
+            if (newRecord) {
+                const index = allProducts.findIndex(p => p.id === newRecord.id)
+                if (index !== -1) {
+                    allProducts[index] = newRecord
+                    updateFilteredProducts()
+                    renderProducts()
+                    updateLastUpdateTime()
+                    console.log('✅ Produto atualizado:', newRecord.nome)
+                }
+            }
+            break
+            
+        case 'DELETE':
+            // Produto removido
+            if (oldRecord) {
+                allProducts = allProducts.filter(p => p.id !== oldRecord.id)
+                updateFilteredProducts()
+                renderProducts()
+                updateLastUpdateTime()
+                console.log('✅ Produto removido:', oldRecord.nome)
+            }
+            break
+    }
+}
+
+// Atualizar produtos filtrados baseado na busca atual
+function updateFilteredProducts() {
+    const searchTerm = searchInput.value.toLowerCase().trim()
+    
+    if (searchTerm === '') {
+        filteredProducts = [...allProducts]
+    } else {
+        filteredProducts = allProducts.filter(product =>
+            product.nome.toLowerCase().includes(searchTerm)
+        )
+    }
 }
 
 // Atualizar indicador de última atualização
@@ -91,23 +175,9 @@ async function updateStock(productId, newStock) {
             throw error
         }
 
-        // Atualizar o produto no estado local
-        const productIndex = allProducts.findIndex(p => p.id === productId)
-        if (productIndex !== -1) {
-            allProducts[productIndex].estoque_atual = newStock
-            allProducts[productIndex].updated_at = new Date().toISOString()
-            
-            // Atualizar também nos produtos filtrados se necessário
-            const filteredIndex = filteredProducts.findIndex(p => p.id === productId)
-            if (filteredIndex !== -1) {
-                filteredProducts[filteredIndex].estoque_atual = newStock
-                filteredProducts[filteredIndex].updated_at = new Date().toISOString()
-            }
-        }
-
-        // Atualizar indicador de última atualização
-        updateLastUpdateTime()
-        renderProducts()
+        // Não precisamos mais atualizar o estado local aqui
+        // O Supabase Realtime vai fazer isso automaticamente
+        console.log('✅ Estoque atualizado no banco de dados')
         
     } catch (error) {
         console.error('Erro ao atualizar estoque:', error)
@@ -117,16 +187,7 @@ async function updateStock(productId, newStock) {
 
 // Busca de produtos
 function handleSearch() {
-    const searchTerm = searchInput.value.toLowerCase().trim()
-    
-    if (searchTerm === '') {
-        filteredProducts = [...allProducts]
-    } else {
-        filteredProducts = allProducts.filter(product =>
-            product.nome.toLowerCase().includes(searchTerm)
-        )
-    }
-    
+    updateFilteredProducts()
     renderProducts()
 }
 
@@ -211,22 +272,9 @@ window.toggleAvailability = async function(productId, newAvailability) {
             throw error
         }
 
-        // Atualizar no estado local
-        const productIndex = allProducts.findIndex(p => p.id === productId)
-        if (productIndex !== -1) {
-            allProducts[productIndex].disponivel = newAvailability
-            allProducts[productIndex].updated_at = new Date().toISOString()
-            
-            const filteredIndex = filteredProducts.findIndex(p => p.id === productId)
-            if (filteredIndex !== -1) {
-                filteredProducts[filteredIndex].disponivel = newAvailability
-                filteredProducts[filteredIndex].updated_at = new Date().toISOString()
-            }
-        }
-
-        // Atualizar indicador de última atualização
-        updateLastUpdateTime()
-        renderProducts()
+        // Não precisamos mais atualizar o estado local aqui
+        // O Supabase Realtime vai fazer isso automaticamente
+        console.log('✅ Disponibilidade atualizada no banco de dados')
         
     } catch (error) {
         console.error('Erro ao alterar disponibilidade:', error)
@@ -252,6 +300,14 @@ function escapeHtml(text) {
     div.textContent = text
     return div.innerHTML
 }
+
+// Limpeza ao sair da página
+window.addEventListener('beforeunload', () => {
+    if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel)
+        console.log('🔌 Desconectado do Supabase Realtime')
+    }
+})
 
 // Adicionar CSS para animação de pulse
 const style = document.createElement('style')
