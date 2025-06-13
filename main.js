@@ -25,10 +25,26 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando aplicação...')
+    console.log('🧹 Limpando cache e forçando reload completo...')
+    
+    // Limpar completamente o estado
     clearLocalCache()
-    loadProducts()
-    setupEventListeners()
-    setupRealtimeSubscription()
+    
+    // Forçar limpeza de qualquer cache do navegador
+    if ('caches' in window) {
+        caches.keys().then(names => {
+            names.forEach(name => {
+                caches.delete(name)
+            })
+        })
+    }
+    
+    // Carregar produtos com delay para garantir limpeza
+    setTimeout(() => {
+        loadProducts()
+        setupEventListeners()
+        setupRealtimeSubscription()
+    }, 100)
 })
 
 // Event Listeners
@@ -40,12 +56,25 @@ function setupEventListeners() {
 function clearLocalCache() {
     allProducts = []
     filteredProducts = []
-    console.log('🧹 Cache local limpo')
+    console.log('🧹 Cache local completamente limpo')
+    
+    // Limpar também o DOM
+    if (productsTableBody) productsTableBody.innerHTML = ''
+    if (cardsContainer) cardsContainer.innerHTML = ''
+    if (errorContainer) errorContainer.innerHTML = ''
+    
+    console.log('🧹 DOM limpo')
 }
 
 // Configurar sincronização em tempo real
 function setupRealtimeSubscription() {
     console.log('📡 Configurando Supabase Realtime...')
+    
+    // Remover canal anterior se existir
+    if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel)
+        console.log('🔌 Canal anterior removido')
+    }
     
     realtimeChannel = supabase
         .channel('produtos_estoque_changes')
@@ -90,6 +119,12 @@ function handleRealtimeChange(payload) {
     switch (eventType) {
         case 'INSERT':
             if (newRecord) {
+                // Verificar se é um produto de teste e ignorar
+                if (isTestProduct(newRecord.nome)) {
+                    console.log('🚫 Produto de teste ignorado:', newRecord.nome)
+                    return
+                }
+                
                 const existingIndex = allProducts.findIndex(p => p.id === newRecord.id)
                 if (existingIndex === -1) {
                     allProducts.push(newRecord)
@@ -105,6 +140,12 @@ function handleRealtimeChange(payload) {
             
         case 'UPDATE':
             if (newRecord) {
+                // Verificar se é um produto de teste e ignorar
+                if (isTestProduct(newRecord.nome)) {
+                    console.log('🚫 Atualização de produto de teste ignorada:', newRecord.nome)
+                    return
+                }
+                
                 const index = allProducts.findIndex(p => p.id === newRecord.id)
                 if (index !== -1) {
                     const oldProduct = allProducts[index]
@@ -141,6 +182,20 @@ function handleRealtimeChange(payload) {
     }
 }
 
+// Verificar se é um produto de teste
+function isTestProduct(nome) {
+    if (!nome) return false
+    
+    const testPatterns = [
+        /^Produto [A-E]$/i,
+        /^Produto \d+$/i,
+        /^Test/i,
+        /^Teste/i
+    ]
+    
+    return testPatterns.some(pattern => pattern.test(nome))
+}
+
 // Atualizar produtos filtrados e renderizar
 function updateFilteredProductsAndRender() {
     updateFilteredProducts()
@@ -153,12 +208,16 @@ function updateFilteredProducts() {
     const searchTerm = searchInput.value.toLowerCase().trim()
     
     if (searchTerm === '') {
-        filteredProducts = [...allProducts]
+        // Filtrar produtos de teste mesmo sem busca
+        filteredProducts = allProducts.filter(product => !isTestProduct(product.nome))
     } else {
         filteredProducts = allProducts.filter(product =>
+            !isTestProduct(product.nome) && 
             product.nome.toLowerCase().includes(searchTerm)
         )
     }
+    
+    console.log(`🔍 Produtos filtrados: ${filteredProducts.length} de ${allProducts.length}`)
 }
 
 // Atualizar indicador de última atualização
@@ -187,22 +246,29 @@ async function loadProducts() {
         
         console.log('🔄 Carregando produtos diretamente do Supabase...')
         
+        // Consulta com filtro para excluir produtos de teste
         const { data, error } = await supabase
             .from('produtos_estoque')
             .select('*')
+            .not('nome', 'in', '("Produto A","Produto B","Produto C","Produto D","Produto E")')
             .order('nome')
 
         if (error) {
             throw error
         }
 
+        // Limpar arrays
         allProducts = []
         filteredProducts = []
         
-        allProducts = data || []
+        // Filtrar produtos de teste adicionalmente no front-end
+        const cleanData = (data || []).filter(product => !isTestProduct(product.nome))
+        
+        allProducts = cleanData
         filteredProducts = [...allProducts]
         
-        console.log(`✅ ${allProducts.length} produtos carregados do banco de dados`)
+        console.log(`✅ ${allProducts.length} produtos válidos carregados`)
+        console.log('📋 Produtos carregados:', allProducts.map(p => p.nome))
         
         renderProducts()
         updateLastUpdateTime()
@@ -219,11 +285,44 @@ async function loadProducts() {
 function forceRefresh() {
     console.log('🔄 Forçando atualização completa...')
     clearLocalCache()
+    
+    // Recriar conexão realtime
+    setupRealtimeSubscription()
+    
+    // Recarregar produtos
     loadProducts()
 }
 
 // Expor função globalmente
 window.forceRefresh = forceRefresh
+
+// Função para limpar produtos de teste manualmente
+async function cleanTestProducts() {
+    try {
+        console.log('🧹 Limpando produtos de teste do banco...')
+        
+        const { error } = await supabase
+            .from('produtos_estoque')
+            .delete()
+            .in('nome', ['Produto A', 'Produto B', 'Produto C', 'Produto D', 'Produto E'])
+        
+        if (error) {
+            throw error
+        }
+        
+        console.log('✅ Produtos de teste removidos do banco')
+        
+        // Forçar reload
+        forceRefresh()
+        
+    } catch (error) {
+        console.error('❌ Erro ao limpar produtos de teste:', error)
+        showError('Erro ao limpar produtos de teste: ' + error.message)
+    }
+}
+
+// Expor função globalmente
+window.cleanTestProducts = cleanTestProducts
 
 // Atualizar estoque no Supabase
 async function updateStock(productId, newStock) {
@@ -527,3 +626,10 @@ console.log('🔍 Funções globais disponíveis:')
 console.log('- changeStock:', typeof window.changeStock)
 console.log('- toggleAvailability:', typeof window.toggleAvailability)
 console.log('- forceRefresh:', typeof window.forceRefresh)
+console.log('- cleanTestProducts:', typeof window.cleanTestProducts)
+
+// Executar limpeza automática na inicialização
+setTimeout(() => {
+    console.log('🧹 Executando limpeza automática de produtos de teste...')
+    cleanTestProducts()
+}, 2000)
