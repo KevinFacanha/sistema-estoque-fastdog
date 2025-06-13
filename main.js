@@ -1,15 +1,52 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Configuração do Supabase
+// Configuração do Supabase - com fallbacks para debug
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+// Debug das variáveis de ambiente
+console.log('🔧 Verificando configuração do Supabase:')
+console.log('- URL:', supabaseUrl ? '✅ Configurada' : '❌ Não encontrada')
+console.log('- Key:', supabaseKey ? '✅ Configurada' : '❌ Não encontrada')
+
+// Verificar se as variáveis estão definidas
+if (!supabaseUrl || !supabaseKey) {
+    console.error('❌ ERRO: Variáveis de ambiente do Supabase não configuradas!')
+    console.error('Configure na Vercel:')
+    console.error('- VITE_SUPABASE_URL')
+    console.error('- VITE_SUPABASE_ANON_KEY')
+    
+    // Mostrar erro na interface
+    document.addEventListener('DOMContentLoaded', () => {
+        const errorContainer = document.getElementById('errorContainer')
+        if (errorContainer) {
+            errorContainer.innerHTML = `
+                <div class="error">
+                    <h3>❌ Erro de Configuração</h3>
+                    <p>As variáveis de ambiente do Supabase não estão configuradas.</p>
+                    <p>Configure na Vercel:</p>
+                    <ul>
+                        <li><strong>VITE_SUPABASE_URL</strong></li>
+                        <li><strong>VITE_SUPABASE_ANON_KEY</strong></li>
+                    </ul>
+                </div>
+            `
+        }
+        
+        const loadingContainer = document.getElementById('loadingContainer')
+        if (loadingContainer) {
+            loadingContainer.style.display = 'none'
+        }
+    })
+}
+
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 // Estado da aplicação
 let allProducts = []
 let filteredProducts = []
 let realtimeChannel = null
-let isUpdating = false // Flag para evitar loops de atualização
+let isUpdating = false
 
 // Elementos DOM
 const searchInput = document.getElementById('searchInput')
@@ -25,6 +62,13 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando aplicação...')
+    
+    // Verificar se as variáveis estão configuradas antes de continuar
+    if (!supabaseUrl || !supabaseKey) {
+        console.error('❌ Não é possível inicializar sem as variáveis de ambiente')
+        return
+    }
+    
     console.log('🧹 Limpando cache e forçando reload completo...')
     
     // Limpar completamente o estado
@@ -49,7 +93,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Event Listeners
 function setupEventListeners() {
-    searchInput.addEventListener('input', handleSearch)
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearch)
+    }
 }
 
 // Limpar cache local
@@ -69,6 +115,12 @@ function clearLocalCache() {
 // Configurar sincronização em tempo real
 function setupRealtimeSubscription() {
     console.log('📡 Configurando Supabase Realtime...')
+    
+    // Verificar se as variáveis estão configuradas
+    if (!supabaseUrl || !supabaseKey) {
+        console.error('❌ Não é possível configurar realtime sem as variáveis de ambiente')
+        return
+    }
     
     // Remover canal anterior se existir
     if (realtimeChannel) {
@@ -205,7 +257,7 @@ function updateFilteredProductsAndRender() {
 
 // Atualizar produtos filtrados baseado na busca atual
 function updateFilteredProducts() {
-    const searchTerm = searchInput.value.toLowerCase().trim()
+    const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : ''
     
     if (searchTerm === '') {
         // Filtrar produtos de teste mesmo sem busca
@@ -222,6 +274,8 @@ function updateFilteredProducts() {
 
 // Atualizar indicador de última atualização
 function updateLastUpdateTime() {
+    if (!lastUpdateTime || !lastUpdateContainer) return
+    
     const now = new Date()
     const day = now.getDate().toString().padStart(2, '0')
     const month = (now.getMonth() + 1).toString().padStart(2, '0')
@@ -246,6 +300,14 @@ async function loadProducts() {
         
         console.log('🔄 Carregando produtos diretamente do Supabase...')
         
+        // Verificar se as variáveis estão configuradas
+        if (!supabaseUrl || !supabaseKey) {
+            throw new Error('Variáveis de ambiente do Supabase não configuradas')
+        }
+        
+        // Testar conexão com o Supabase
+        console.log('🔗 Testando conexão com Supabase...')
+        
         // Consulta com filtro para excluir produtos de teste
         const { data, error } = await supabase
             .from('produtos_estoque')
@@ -254,8 +316,11 @@ async function loadProducts() {
             .order('nome')
 
         if (error) {
+            console.error('❌ Erro na consulta Supabase:', error)
             throw error
         }
+
+        console.log('✅ Resposta do Supabase recebida:', data)
 
         // Limpar arrays
         allProducts = []
@@ -275,7 +340,21 @@ async function loadProducts() {
         
     } catch (error) {
         console.error('❌ Erro ao carregar produtos:', error)
-        showError('Erro ao carregar produtos: ' + error.message)
+        
+        let errorMessage = 'Erro ao carregar produtos: ' + error.message
+        
+        // Mensagens de erro mais específicas
+        if (error.message.includes('Invalid API key')) {
+            errorMessage = 'Erro: Chave da API do Supabase inválida. Verifique VITE_SUPABASE_ANON_KEY na Vercel.'
+        } else if (error.message.includes('Invalid URL')) {
+            errorMessage = 'Erro: URL do Supabase inválida. Verifique VITE_SUPABASE_URL na Vercel.'
+        } else if (error.message.includes('não configuradas')) {
+            errorMessage = 'Erro: Configure as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY na Vercel.'
+        } else if (error.message.includes('Network')) {
+            errorMessage = 'Erro de conexão. Verifique sua internet e as configurações do Supabase.'
+        }
+        
+        showError(errorMessage)
     } finally {
         showLoading(false)
     }
@@ -295,34 +374,6 @@ function forceRefresh() {
 
 // Expor função globalmente
 window.forceRefresh = forceRefresh
-
-// Função para limpar produtos de teste manualmente
-async function cleanTestProducts() {
-    try {
-        console.log('🧹 Limpando produtos de teste do banco...')
-        
-        const { error } = await supabase
-            .from('produtos_estoque')
-            .delete()
-            .in('nome', ['Produto A', 'Produto B', 'Produto C', 'Produto D', 'Produto E'])
-        
-        if (error) {
-            throw error
-        }
-        
-        console.log('✅ Produtos de teste removidos do banco')
-        
-        // Forçar reload
-        forceRefresh()
-        
-    } catch (error) {
-        console.error('❌ Erro ao limpar produtos de teste:', error)
-        showError('Erro ao limpar produtos de teste: ' + error.message)
-    }
-}
-
-// Expor função globalmente
-window.cleanTestProducts = cleanTestProducts
 
 // Atualizar estoque no Supabase
 async function updateStock(productId, newStock) {
@@ -463,26 +514,28 @@ function renderProducts() {
     console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela`)
     
     if (filteredProducts.length === 0) {
-        productsTable.style.display = 'none'
-        cardsContainer.innerHTML = ''
-        noResultsContainer.style.display = 'block'
+        if (productsTable) productsTable.style.display = 'none'
+        if (cardsContainer) cardsContainer.innerHTML = ''
+        if (noResultsContainer) noResultsContainer.style.display = 'block'
         return
     }
 
-    noResultsContainer.style.display = 'none'
+    if (noResultsContainer) noResultsContainer.style.display = 'none'
 
     if (isMobile()) {
-        productsTable.style.display = 'none'
+        if (productsTable) productsTable.style.display = 'none'
         renderCards()
     } else {
-        cardsContainer.innerHTML = ''
-        productsTable.style.display = 'table'
+        if (cardsContainer) cardsContainer.innerHTML = ''
+        if (productsTable) productsTable.style.display = 'table'
         renderTable()
     }
 }
 
 // Renderizar tabela (desktop)
 function renderTable() {
+    if (!productsTableBody) return
+    
     productsTableBody.innerHTML = filteredProducts.map(product => {
         const isLowStock = product.estoque_atual <= product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
@@ -531,6 +584,8 @@ function renderTable() {
 
 // Renderizar cards (mobile)
 function renderCards() {
+    if (!cardsContainer) return
+    
     cardsContainer.innerHTML = filteredProducts.map(product => {
         const isLowStock = product.estoque_atual <= product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
@@ -591,15 +646,21 @@ function renderCards() {
 
 // Utilitários
 function showLoading(show) {
-    loadingContainer.style.display = show ? 'block' : 'none'
+    if (loadingContainer) {
+        loadingContainer.style.display = show ? 'block' : 'none'
+    }
 }
 
 function showError(message) {
-    errorContainer.innerHTML = `<div class="error">${escapeHtml(message)}</div>`
+    if (errorContainer) {
+        errorContainer.innerHTML = `<div class="error">${escapeHtml(message)}</div>`
+    }
 }
 
 function hideError() {
-    errorContainer.innerHTML = ''
+    if (errorContainer) {
+        errorContainer.innerHTML = ''
+    }
 }
 
 function escapeHtml(text) {
@@ -626,10 +687,3 @@ console.log('🔍 Funções globais disponíveis:')
 console.log('- changeStock:', typeof window.changeStock)
 console.log('- toggleAvailability:', typeof window.toggleAvailability)
 console.log('- forceRefresh:', typeof window.forceRefresh)
-console.log('- cleanTestProducts:', typeof window.cleanTestProducts)
-
-// Executar limpeza automática na inicialização
-setTimeout(() => {
-    console.log('🧹 Executando limpeza automática de produtos de teste...')
-    cleanTestProducts()
-}, 2000)
