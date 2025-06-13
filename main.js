@@ -54,12 +54,12 @@ function setupRealtimeSubscription() {
                 table: 'produtos_estoque'
             },
             (payload) => {
-                console.log('Mudança detectada:', payload)
+                console.log('🔄 Mudança detectada via realtime:', payload)
                 handleRealtimeChange(payload)
             }
         )
         .subscribe((status) => {
-            console.log('Status da conexão realtime:', status)
+            console.log('📡 Status da conexão realtime:', status)
             if (status === 'SUBSCRIBED') {
                 console.log('✅ Conectado ao Supabase Realtime')
             }
@@ -70,15 +70,22 @@ function setupRealtimeSubscription() {
 function handleRealtimeChange(payload) {
     const { eventType, new: newRecord, old: oldRecord } = payload
     
+    console.log(`🔄 Processando evento: ${eventType}`, { newRecord, oldRecord })
+    
     switch (eventType) {
         case 'INSERT':
             if (newRecord) {
-                allProducts.push(newRecord)
-                allProducts.sort((a, b) => a.nome.localeCompare(b.nome))
-                updateFilteredProducts()
-                renderProducts()
-                updateLastUpdateTime()
-                console.log('✅ Novo produto adicionado:', newRecord.nome)
+                // Verificar se o produto já existe para evitar duplicatas
+                const existingIndex = allProducts.findIndex(p => p.id === newRecord.id)
+                if (existingIndex === -1) {
+                    allProducts.push(newRecord)
+                    allProducts.sort((a, b) => a.nome.localeCompare(b.nome))
+                    console.log('✅ Novo produto adicionado:', newRecord.nome)
+                } else {
+                    console.log('⚠️ Produto já existe, atualizando:', newRecord.nome)
+                    allProducts[existingIndex] = newRecord
+                }
+                updateFilteredProductsAndRender()
             }
             break
             
@@ -86,11 +93,22 @@ function handleRealtimeChange(payload) {
             if (newRecord) {
                 const index = allProducts.findIndex(p => p.id === newRecord.id)
                 if (index !== -1) {
+                    console.log('📝 Atualizando produto:', {
+                        nome: newRecord.nome,
+                        estoqueAnterior: allProducts[index].estoque_atual,
+                        estoqueNovo: newRecord.estoque_atual,
+                        disponivelAnterior: allProducts[index].disponivel,
+                        disponivelNovo: newRecord.disponivel
+                    })
+                    
                     allProducts[index] = newRecord
-                    updateFilteredProducts()
-                    renderProducts()
-                    updateLastUpdateTime()
-                    console.log('✅ Produto atualizado:', newRecord.nome)
+                    updateFilteredProductsAndRender()
+                    console.log('✅ Produto atualizado com sucesso')
+                } else {
+                    console.log('⚠️ Produto não encontrado para atualização, adicionando:', newRecord.nome)
+                    allProducts.push(newRecord)
+                    allProducts.sort((a, b) => a.nome.localeCompare(b.nome))
+                    updateFilteredProductsAndRender()
                 }
             }
             break
@@ -98,13 +116,18 @@ function handleRealtimeChange(payload) {
         case 'DELETE':
             if (oldRecord) {
                 allProducts = allProducts.filter(p => p.id !== oldRecord.id)
-                updateFilteredProducts()
-                renderProducts()
-                updateLastUpdateTime()
+                updateFilteredProductsAndRender()
                 console.log('✅ Produto removido:', oldRecord.nome)
             }
             break
     }
+}
+
+// Atualizar produtos filtrados e renderizar
+function updateFilteredProductsAndRender() {
+    updateFilteredProducts()
+    renderProducts()
+    updateLastUpdateTime()
 }
 
 // Atualizar produtos filtrados baseado na busca atual
@@ -167,7 +190,7 @@ async function loadProducts() {
         updateLastUpdateTime()
         
     } catch (error) {
-        console.error('Erro ao carregar produtos:', error)
+        console.error('❌ Erro ao carregar produtos:', error)
         showError('Erro ao carregar produtos: ' + error.message)
     } finally {
         showLoading(false)
@@ -204,6 +227,9 @@ async function updateStock(productId, newStock) {
 
         console.log('✅ Estoque atualizado no banco de dados:', data)
         
+        // Não atualizar interface aqui - deixar o realtime fazer isso
+        // para garantir sincronização correta
+        
     } catch (error) {
         console.error('❌ Erro ao atualizar estoque:', error)
         showError('Erro ao atualizar estoque: ' + error.message)
@@ -233,6 +259,9 @@ async function toggleAvailability(productId, newAvailability) {
 
         console.log('✅ Disponibilidade atualizada no banco de dados:', data)
         
+        // Não atualizar interface aqui - deixar o realtime fazer isso
+        // para garantir sincronização correta
+        
     } catch (error) {
         console.error('❌ Erro ao alterar disponibilidade:', error)
         showError('Erro ao alterar disponibilidade: ' + error.message)
@@ -253,14 +282,10 @@ async function changeStock(productId, change) {
     }
 
     const newStock = Math.max(0, product.estoque_atual + change)
-    console.log(`📊 Estoque atual: ${product.estoque_atual}, Novo estoque: ${newStock}`)
+    console.log(`📊 Produto: ${product.nome}, Estoque atual: ${product.estoque_atual}, Novo estoque: ${newStock}`)
     
-    // Atualizar imediatamente na interface para feedback visual
-    product.estoque_atual = newStock
-    updateFilteredProducts()
-    renderProducts()
-    
-    // Atualizar no banco de dados
+    // Não atualizar interface imediatamente - deixar o realtime fazer isso
+    // para evitar inconsistências
     await updateStock(productId, newStock)
 }
 
