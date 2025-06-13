@@ -22,6 +22,8 @@ const lastUpdateTime = document.getElementById('lastUpdateTime')
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
+    // Limpar qualquer cache local primeiro
+    clearLocalCache()
     loadProducts()
     setupEventListeners()
     setupRealtimeSubscription()
@@ -30,6 +32,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // Event Listeners
 function setupEventListeners() {
     searchInput.addEventListener('input', handleSearch)
+}
+
+// Limpar cache local
+function clearLocalCache() {
+    allProducts = []
+    filteredProducts = []
+    console.log('🧹 Cache local limpo')
 }
 
 // Configurar sincronização em tempo real
@@ -133,12 +142,15 @@ function updateLastUpdateTime() {
     }, 10)
 }
 
-// Carregar produtos do Supabase
+// Carregar produtos do Supabase (SEMPRE do banco, nunca cache)
 async function loadProducts() {
     try {
         showLoading(true)
         hideError()
         
+        console.log('🔄 Carregando produtos diretamente do Supabase...')
+        
+        // Forçar nova consulta ao banco (sem cache)
         const { data, error } = await supabase
             .from('produtos_estoque')
             .select('*')
@@ -148,9 +160,19 @@ async function loadProducts() {
             throw error
         }
 
+        // Limpar completamente os arrays antes de popular
+        allProducts = []
+        filteredProducts = []
+        
+        // Popular com dados frescos do banco
         allProducts = data || []
         filteredProducts = [...allProducts]
+        
+        console.log(`✅ ${allProducts.length} produtos carregados do banco de dados`)
+        console.log('Produtos encontrados:', allProducts.map(p => p.nome))
+        
         renderProducts()
+        updateLastUpdateTime()
         
     } catch (error) {
         console.error('Erro ao carregar produtos:', error)
@@ -158,6 +180,13 @@ async function loadProducts() {
     } finally {
         showLoading(false)
     }
+}
+
+// Função para forçar recarregamento completo
+window.forceRefresh = async function() {
+    console.log('🔄 Forçando atualização completa...')
+    clearLocalCache()
+    await loadProducts()
 }
 
 // Atualizar estoque no Supabase
@@ -193,6 +222,8 @@ function handleSearch() {
 
 // Renderizar produtos na tabela
 function renderProducts() {
+    console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela`)
+    
     if (filteredProducts.length === 0) {
         productsTable.style.display = 'none'
         noResultsContainer.style.display = 'block'
