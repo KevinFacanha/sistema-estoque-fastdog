@@ -9,6 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseKey)
 let allProducts = []
 let filteredProducts = []
 let realtimeChannel = null
+let isUpdating = false // Flag para evitar loops de atualização
 
 // Elementos DOM
 const searchInput = document.getElementById('searchInput')
@@ -44,6 +45,8 @@ function clearLocalCache() {
 
 // Configurar sincronização em tempo real
 function setupRealtimeSubscription() {
+    console.log('📡 Configurando Supabase Realtime...')
+    
     realtimeChannel = supabase
         .channel('produtos_estoque_changes')
         .on(
@@ -54,7 +57,7 @@ function setupRealtimeSubscription() {
                 table: 'produtos_estoque'
             },
             (payload) => {
-                console.log('🔄 Mudança detectada via realtime:', payload)
+                console.log('🔄 Evento realtime recebido:', payload)
                 handleRealtimeChange(payload)
             }
         )
@@ -62,12 +65,24 @@ function setupRealtimeSubscription() {
             console.log('📡 Status da conexão realtime:', status)
             if (status === 'SUBSCRIBED') {
                 console.log('✅ Conectado ao Supabase Realtime')
+            } else if (status === 'CHANNEL_ERROR') {
+                console.error('❌ Erro na conexão realtime')
+                // Tentar reconectar após 3 segundos
+                setTimeout(() => {
+                    console.log('🔄 Tentando reconectar...')
+                    setupRealtimeSubscription()
+                }, 3000)
             }
         })
 }
 
 // Processar mudanças em tempo real
 function handleRealtimeChange(payload) {
+    if (isUpdating) {
+        console.log('⏳ Atualização em andamento, ignorando evento realtime')
+        return
+    }
+
     const { eventType, new: newRecord, old: oldRecord } = payload
     
     console.log(`🔄 Processando evento: ${eventType}`, { newRecord, oldRecord })
@@ -75,7 +90,6 @@ function handleRealtimeChange(payload) {
     switch (eventType) {
         case 'INSERT':
             if (newRecord) {
-                // Verificar se o produto já existe para evitar duplicatas
                 const existingIndex = allProducts.findIndex(p => p.id === newRecord.id)
                 if (existingIndex === -1) {
                     allProducts.push(newRecord)
@@ -93,17 +107,18 @@ function handleRealtimeChange(payload) {
             if (newRecord) {
                 const index = allProducts.findIndex(p => p.id === newRecord.id)
                 if (index !== -1) {
+                    const oldProduct = allProducts[index]
                     console.log('📝 Atualizando produto:', {
                         nome: newRecord.nome,
-                        estoqueAnterior: allProducts[index].estoque_atual,
+                        estoqueAnterior: oldProduct.estoque_atual,
                         estoqueNovo: newRecord.estoque_atual,
-                        disponivelAnterior: allProducts[index].disponivel,
+                        disponivelAnterior: oldProduct.disponivel,
                         disponivelNovo: newRecord.disponivel
                     })
                     
                     allProducts[index] = newRecord
                     updateFilteredProductsAndRender()
-                    console.log('✅ Produto atualizado com sucesso')
+                    console.log('✅ Produto atualizado com sucesso na interface')
                 } else {
                     console.log('⚠️ Produto não encontrado para atualização, adicionando:', newRecord.nome)
                     allProducts.push(newRecord)
@@ -115,9 +130,12 @@ function handleRealtimeChange(payload) {
             
         case 'DELETE':
             if (oldRecord) {
+                const initialLength = allProducts.length
                 allProducts = allProducts.filter(p => p.id !== oldRecord.id)
-                updateFilteredProductsAndRender()
-                console.log('✅ Produto removido:', oldRecord.nome)
+                if (allProducts.length < initialLength) {
+                    updateFilteredProductsAndRender()
+                    console.log('✅ Produto removido:', oldRecord.nome)
+                }
             }
             break
     }
@@ -209,9 +227,27 @@ window.forceRefresh = forceRefresh
 
 // Atualizar estoque no Supabase
 async function updateStock(productId, newStock) {
+    if (isUpdating) {
+        console.log('⏳ Atualização já em andamento, ignorando')
+        return
+    }
+
     try {
+        isUpdating = true
         console.log(`🔄 Atualizando estoque do produto ${productId} para ${newStock}`)
         
+        // Atualizar interface imediatamente para feedback visual
+        const productIndex = allProducts.findIndex(p => p.id === productId)
+        if (productIndex !== -1) {
+            const oldStock = allProducts[productIndex].estoque_atual
+            allProducts[productIndex].estoque_atual = newStock
+            allProducts[productIndex].updated_at = new Date().toISOString()
+            
+            console.log(`📊 Interface atualizada: ${oldStock} → ${newStock}`)
+            updateFilteredProductsAndRender()
+        }
+        
+        // Enviar para o banco
         const { data, error } = await supabase
             .from('produtos_estoque')
             .update({ 
@@ -227,22 +263,41 @@ async function updateStock(productId, newStock) {
 
         console.log('✅ Estoque atualizado no banco de dados:', data)
         
-        // Não atualizar interface aqui - deixar o realtime fazer isso
-        // para garantir sincronização correta
-        
     } catch (error) {
         console.error('❌ Erro ao atualizar estoque:', error)
         showError('Erro ao atualizar estoque: ' + error.message)
         
-        // Recarregar produtos em caso de erro para manter sincronização
+        // Recarregar produtos em caso de erro para restaurar estado correto
         await loadProducts()
+    } finally {
+        // Aguardar um pouco antes de permitir nova atualização
+        setTimeout(() => {
+            isUpdating = false
+        }, 500)
     }
 }
 
 // Alternar disponibilidade
 async function toggleAvailability(productId, newAvailability) {
+    if (isUpdating) {
+        console.log('⏳ Atualização já em andamento, ignorando')
+        return
+    }
+
     try {
+        isUpdating = true
         console.log(`🔄 Alterando disponibilidade do produto ${productId} para ${newAvailability}`)
+        
+        // Atualizar interface imediatamente para feedback visual
+        const productIndex = allProducts.findIndex(p => p.id === productId)
+        if (productIndex !== -1) {
+            const oldAvailability = allProducts[productIndex].disponivel
+            allProducts[productIndex].disponivel = newAvailability
+            allProducts[productIndex].updated_at = new Date().toISOString()
+            
+            console.log(`🔄 Interface atualizada: ${oldAvailability} → ${newAvailability}`)
+            updateFilteredProductsAndRender()
+        }
         
         const { data, error } = await supabase
             .from('produtos_estoque')
@@ -259,15 +314,17 @@ async function toggleAvailability(productId, newAvailability) {
 
         console.log('✅ Disponibilidade atualizada no banco de dados:', data)
         
-        // Não atualizar interface aqui - deixar o realtime fazer isso
-        // para garantir sincronização correta
-        
     } catch (error) {
         console.error('❌ Erro ao alterar disponibilidade:', error)
         showError('Erro ao alterar disponibilidade: ' + error.message)
         
-        // Recarregar produtos em caso de erro para manter sincronização
+        // Recarregar produtos em caso de erro para restaurar estado correto
         await loadProducts()
+    } finally {
+        // Aguardar um pouco antes de permitir nova atualização
+        setTimeout(() => {
+            isUpdating = false
+        }, 500)
     }
 }
 
@@ -284,8 +341,6 @@ async function changeStock(productId, change) {
     const newStock = Math.max(0, product.estoque_atual + change)
     console.log(`📊 Produto: ${product.nome}, Estoque atual: ${product.estoque_atual}, Novo estoque: ${newStock}`)
     
-    // Não atualizar interface imediatamente - deixar o realtime fazer isso
-    // para evitar inconsistências
     await updateStock(productId, newStock)
 }
 
