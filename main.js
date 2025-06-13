@@ -14,6 +14,7 @@ let realtimeChannel = null
 const searchInput = document.getElementById('searchInput')
 const productsTable = document.getElementById('productsTable')
 const productsTableBody = document.getElementById('productsTableBody')
+const cardsContainer = document.getElementById('cardsContainer')
 const loadingContainer = document.getElementById('loadingContainer')
 const errorContainer = document.getElementById('errorContainer')
 const noResultsContainer = document.getElementById('noResultsContainer')
@@ -220,19 +221,38 @@ function handleSearch() {
     renderProducts()
 }
 
-// Renderizar produtos na tabela
+// Detectar se está em mobile
+function isMobile() {
+    return window.innerWidth <= 768
+}
+
+// Renderizar produtos na tabela ou cards
 function renderProducts() {
     console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela`)
     
     if (filteredProducts.length === 0) {
         productsTable.style.display = 'none'
+        cardsContainer.innerHTML = ''
         noResultsContainer.style.display = 'block'
         return
     }
 
     noResultsContainer.style.display = 'none'
-    productsTable.style.display = 'table'
 
+    if (isMobile()) {
+        // Renderizar como cards no mobile
+        productsTable.style.display = 'none'
+        renderCards()
+    } else {
+        // Renderizar como tabela no desktop
+        cardsContainer.innerHTML = ''
+        productsTable.style.display = 'table'
+        renderTable()
+    }
+}
+
+// Renderizar tabela (desktop)
+function renderTable() {
     productsTableBody.innerHTML = filteredProducts.map(product => {
         const isLowStock = product.estoque_atual <= product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
@@ -275,6 +295,66 @@ function renderProducts() {
                     </button>
                 </td>
             </tr>
+        `
+    }).join('')
+}
+
+// Renderizar cards (mobile)
+function renderCards() {
+    cardsContainer.innerHTML = filteredProducts.map(product => {
+        const isLowStock = product.estoque_atual <= product.estoque_minimo
+        const stockClass = isLowStock ? 'low-stock' : ''
+        const cardClass = isLowStock ? 'low-stock-card' : ''
+        
+        return `
+            <div class="product-card ${cardClass}" id="card-${product.id}">
+                <div class="card-header">
+                    <div class="card-product-name">${escapeHtml(product.nome)}</div>
+                    <div class="card-availability">
+                        <span class="status-badge ${product.disponivel ? 'status-available' : 'status-unavailable'}">
+                            ${product.disponivel ? '✅ Disponível' : '❌ Indisponível'}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="card-stock-section">
+                    <div class="card-stock-info">
+                        <div class="card-stock-label">Estoque Atual</div>
+                        <div class="card-stock-value ${stockClass}">
+                            ${product.estoque_atual}
+                            ${isLowStock ? ' ⚠️' : ''}
+                        </div>
+                        ${isLowStock ? '<div class="low-stock-warning">Estoque baixo!</div>' : ''}
+                    </div>
+                    
+                    <div class="card-stock-controls">
+                        <button 
+                            class="stock-btn decrease" 
+                            onclick="changeStock('${product.id}', -1)"
+                            ${product.estoque_atual <= 0 ? 'disabled' : ''}
+                            title="Diminuir estoque"
+                        >−</button>
+                        <button 
+                            class="stock-btn increase" 
+                            onclick="changeStock('${product.id}', 1)"
+                            title="Aumentar estoque"
+                        >+</button>
+                    </div>
+                </div>
+                
+                <div class="card-action-section">
+                    <div class="card-min-stock">
+                        <strong>Mínimo:</strong> ${product.estoque_minimo}
+                    </div>
+                    <button 
+                        class="action-btn ${product.disponivel ? 'decrease' : 'increase'}"
+                        onclick="toggleAvailability('${product.id}', ${!product.disponivel})"
+                        title="${product.disponivel ? 'Marcar como indisponível' : 'Marcar como disponível'}"
+                    >
+                        ${product.disponivel ? '🚫' : '✅'}
+                    </button>
+                </div>
+            </div>
         `
     }).join('')
 }
@@ -332,6 +412,11 @@ function escapeHtml(text) {
     return div.innerHTML
 }
 
+// Rerender quando a tela muda de tamanho
+window.addEventListener('resize', () => {
+    renderProducts()
+})
+
 // Limpeza ao sair da página
 window.addEventListener('beforeunload', () => {
     if (realtimeChannel) {
@@ -339,14 +424,3 @@ window.addEventListener('beforeunload', () => {
         console.log('🔌 Desconectado do Supabase Realtime')
     }
 })
-
-// Adicionar CSS para animação de pulse
-const style = document.createElement('style')
-style.textContent = `
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.02); }
-        100% { transform: scale(1); }
-    }
-`
-document.head.appendChild(style)
