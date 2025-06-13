@@ -16,6 +16,8 @@ const productsTableBody = document.getElementById('productsTableBody')
 const loadingContainer = document.getElementById('loadingContainer')
 const errorContainer = document.getElementById('errorContainer')
 const noResultsContainer = document.getElementById('noResultsContainer')
+const lastUpdateContainer = document.getElementById('lastUpdateContainer')
+const lastUpdateTime = document.getElementById('lastUpdateTime')
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
@@ -26,6 +28,25 @@ document.addEventListener('DOMContentLoaded', () => {
 // Event Listeners
 function setupEventListeners() {
     searchInput.addEventListener('input', handleSearch)
+}
+
+// Atualizar indicador de última atualização
+function updateLastUpdateTime() {
+    const now = new Date()
+    const day = now.getDate().toString().padStart(2, '0')
+    const month = (now.getMonth() + 1).toString().padStart(2, '0')
+    const hours = now.getHours().toString().padStart(2, '0')
+    const minutes = now.getMinutes().toString().padStart(2, '0')
+    
+    const formattedTime = `${day}/${month} às ${hours}:${minutes}`
+    lastUpdateTime.textContent = formattedTime
+    lastUpdateContainer.style.display = 'block'
+    
+    // Adicionar efeito visual de atualização
+    lastUpdateContainer.style.animation = 'none'
+    setTimeout(() => {
+        lastUpdateContainer.style.animation = 'pulse 0.5s ease-in-out'
+    }, 10)
 }
 
 // Carregar produtos do Supabase
@@ -60,7 +81,10 @@ async function updateStock(productId, newStock) {
     try {
         const { error } = await supabase
             .from('produtos_estoque')
-            .update({ estoque_atual: newStock })
+            .update({ 
+                estoque_atual: newStock,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', productId)
 
         if (error) {
@@ -71,14 +95,18 @@ async function updateStock(productId, newStock) {
         const productIndex = allProducts.findIndex(p => p.id === productId)
         if (productIndex !== -1) {
             allProducts[productIndex].estoque_atual = newStock
+            allProducts[productIndex].updated_at = new Date().toISOString()
             
             // Atualizar também nos produtos filtrados se necessário
             const filteredIndex = filteredProducts.findIndex(p => p.id === productId)
             if (filteredIndex !== -1) {
                 filteredProducts[filteredIndex].estoque_atual = newStock
+                filteredProducts[filteredIndex].updated_at = new Date().toISOString()
             }
         }
 
+        // Atualizar indicador de última atualização
+        updateLastUpdateTime()
         renderProducts()
         
     } catch (error) {
@@ -120,8 +148,8 @@ function renderProducts() {
         return `
             <tr>
                 <td>
-                    <strong>${escapeHtml(product.nome)}</strong>
-                    ${isLowStock ? '<div class="low-stock-warning">⚠️ Estoque baixo</div>' : ''}
+                    <div class="product-name">${escapeHtml(product.nome)}</div>
+                    ${isLowStock ? '<div class="low-stock-warning">⚠️ Baixo</div>' : ''}
                 </td>
                 <td>
                     <div class="stock-controls">
@@ -142,12 +170,12 @@ function renderProducts() {
                 <td>${product.estoque_minimo}</td>
                 <td>
                     <span class="status-badge ${product.disponivel ? 'status-available' : 'status-unavailable'}">
-                        ${product.disponivel ? '✅ Disponível' : '❌ Indisponível'}
+                        ${product.disponivel ? '✅ Sim' : '❌ Não'}
                     </span>
                 </td>
                 <td>
                     <button 
-                        class="stock-btn ${product.disponivel ? 'decrease' : 'increase'}"
+                        class="action-btn ${product.disponivel ? 'decrease' : 'increase'}"
                         onclick="toggleAvailability('${product.id}', ${!product.disponivel})"
                         title="${product.disponivel ? 'Marcar como indisponível' : 'Marcar como disponível'}"
                     >
@@ -173,7 +201,10 @@ window.toggleAvailability = async function(productId, newAvailability) {
     try {
         const { error } = await supabase
             .from('produtos_estoque')
-            .update({ disponivel: newAvailability })
+            .update({ 
+                disponivel: newAvailability,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', productId)
 
         if (error) {
@@ -184,13 +215,17 @@ window.toggleAvailability = async function(productId, newAvailability) {
         const productIndex = allProducts.findIndex(p => p.id === productId)
         if (productIndex !== -1) {
             allProducts[productIndex].disponivel = newAvailability
+            allProducts[productIndex].updated_at = new Date().toISOString()
             
             const filteredIndex = filteredProducts.findIndex(p => p.id === productId)
             if (filteredIndex !== -1) {
                 filteredProducts[filteredIndex].disponivel = newAvailability
+                filteredProducts[filteredIndex].updated_at = new Date().toISOString()
             }
         }
 
+        // Atualizar indicador de última atualização
+        updateLastUpdateTime()
         renderProducts()
         
     } catch (error) {
@@ -217,3 +252,14 @@ function escapeHtml(text) {
     div.textContent = text
     return div.innerHTML
 }
+
+// Adicionar CSS para animação de pulse
+const style = document.createElement('style')
+style.textContent = `
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.02); }
+        100% { transform: scale(1); }
+    }
+`
+document.head.appendChild(style)
