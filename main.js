@@ -9,6 +9,9 @@ console.log('🔧 Verificando configuração do Supabase:')
 console.log('- URL:', supabaseUrl ? '✅ Configurada' : '❌ Não encontrada')
 console.log('- Key:', supabaseKey ? '✅ Configurada' : '❌ Não encontrada')
 
+// Declarar supabase como null inicialmente
+let supabase = null
+
 // Verificar se as variáveis estão definidas
 if (!supabaseUrl || !supabaseKey) {
     console.error('❌ ERRO: Variáveis de ambiente do Supabase não configuradas!')
@@ -38,9 +41,10 @@ if (!supabaseUrl || !supabaseKey) {
             loadingContainer.style.display = 'none'
         }
     })
+} else {
+    // Só criar o cliente se as variáveis estiverem configuradas
+    supabase = createClient(supabaseUrl, supabaseKey)
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey)
 
 // Estado da aplicação
 let allProducts = []
@@ -64,7 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando aplicação...')
     
     // Verificar se as variáveis estão configuradas antes de continuar
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !supabaseKey || !supabase) {
         console.error('❌ Não é possível inicializar sem as variáveis de ambiente')
         return
     }
@@ -116,8 +120,8 @@ function clearLocalCache() {
 function setupRealtimeSubscription() {
     console.log('📡 Configurando Supabase Realtime...')
     
-    // Verificar se as variáveis estão configuradas
-    if (!supabaseUrl || !supabaseKey) {
+    // Verificar se as variáveis estão configuradas e o cliente existe
+    if (!supabaseUrl || !supabaseKey || !supabase) {
         console.error('❌ Não é possível configurar realtime sem as variáveis de ambiente')
         return
     }
@@ -300,8 +304,8 @@ async function loadProducts() {
         
         console.log('🔄 Carregando produtos diretamente do Supabase...')
         
-        // Verificar se as variáveis estão configuradas
-        if (!supabaseUrl || !supabaseKey) {
+        // Verificar se as variáveis estão configuradas e o cliente existe
+        if (!supabaseUrl || !supabaseKey || !supabase) {
             throw new Error('Variáveis de ambiente do Supabase não configuradas')
         }
         
@@ -382,6 +386,13 @@ async function updateStock(productId, newStock) {
         return
     }
 
+    // Verificar se o cliente Supabase existe
+    if (!supabase) {
+        console.error('❌ Cliente Supabase não inicializado')
+        showError('Erro: Configuração do Supabase não encontrada')
+        return
+    }
+
     try {
         isUpdating = true
         console.log(`🔄 Atualizando estoque do produto ${productId} para ${newStock}`)
@@ -431,6 +442,13 @@ async function updateStock(productId, newStock) {
 async function toggleAvailability(productId, newAvailability) {
     if (isUpdating) {
         console.log('⏳ Atualização já em andamento, ignorando')
+        return
+    }
+
+    // Verificar se o cliente Supabase existe
+    if (!supabase) {
+        console.error('❌ Cliente Supabase não inicializado')
+        showError('Erro: Configuração do Supabase não encontrada')
         return
     }
 
@@ -676,7 +694,7 @@ window.addEventListener('resize', () => {
 
 // Limpeza ao sair da página
 window.addEventListener('beforeunload', () => {
-    if (realtimeChannel) {
+    if (realtimeChannel && supabase) {
         supabase.removeChannel(realtimeChannel)
         console.log('🔌 Desconectado do Supabase Realtime')
     }
