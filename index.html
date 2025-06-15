@@ -54,6 +54,7 @@
 
         .search-container {
             position: relative;
+            margin-bottom: 16px;
         }
 
         .search-input {
@@ -71,6 +72,105 @@
             border-color: #3498db;
             background: white;
             box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        /* Filtros de Estoque */
+        .filters-container {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 18px;
+            border: 2px solid #e1e8ed;
+            border-radius: 10px;
+            background: white;
+            color: #2c3e50;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .filter-btn:hover {
+            border-color: #3498db;
+            background: #f8f9fa;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .filter-btn.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .filter-btn.active:hover {
+            background: #2980b9;
+            border-color: #2980b9;
+        }
+
+        .filter-btn.low-stock {
+            border-color: #e74c3c;
+        }
+
+        .filter-btn.low-stock:hover {
+            border-color: #c0392b;
+            background: #fdf2f2;
+        }
+
+        .filter-btn.low-stock.active {
+            background: #e74c3c;
+            border-color: #e74c3c;
+        }
+
+        .filter-btn.low-stock.active:hover {
+            background: #c0392b;
+            border-color: #c0392b;
+        }
+
+        .filter-btn.normal-stock {
+            border-color: #27ae60;
+        }
+
+        .filter-btn.normal-stock:hover {
+            border-color: #229954;
+            background: #f2f8f2;
+        }
+
+        .filter-btn.normal-stock.active {
+            background: #27ae60;
+            border-color: #27ae60;
+        }
+
+        .filter-btn.normal-stock.active:hover {
+            background: #229954;
+            border-color: #229954;
+        }
+
+        .filter-count {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        .filter-btn.active .filter-count {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .filter-icon {
+            font-size: 16px;
         }
 
         /* Desktop Table Layout */
@@ -354,6 +454,21 @@
                 font-size: 16px; /* Prevents zoom on iOS */
             }
 
+            .filters-container {
+                gap: 8px;
+                margin-bottom: 16px;
+            }
+
+            .filter-btn {
+                padding: 10px 14px;
+                font-size: 13px;
+            }
+
+            .filter-count {
+                font-size: 11px;
+                padding: 1px 6px;
+            }
+
             /* Hide table, show cards */
             .table-container {
                 background: transparent;
@@ -397,6 +512,15 @@
             .last-update {
                 font-size: 0.8rem;
                 padding: 8px 12px;
+            }
+
+            .filters-container {
+                gap: 6px;
+            }
+
+            .filter-btn {
+                padding: 8px 12px;
+                font-size: 12px;
             }
 
             .product-card {
@@ -460,6 +584,25 @@
                     id="searchInput"
                     placeholder="🔍 Buscar produto por nome..."
                 >
+            </div>
+            
+            <!-- Filtros de Estoque -->
+            <div class="filters-container">
+                <button class="filter-btn active" id="filterAll" data-filter="all">
+                    <span class="filter-icon">📦</span>
+                    <span>Todos</span>
+                    <span class="filter-count" id="countAll">0</span>
+                </button>
+                <button class="filter-btn low-stock" id="filterLowStock" data-filter="low">
+                    <span class="filter-icon">⚠️</span>
+                    <span>Estoque Baixo</span>
+                    <span class="filter-count" id="countLowStock">0</span>
+                </button>
+                <button class="filter-btn normal-stock" id="filterNormalStock" data-filter="normal">
+                    <span class="filter-icon">✅</span>
+                    <span>Estoque Normal</span>
+                    <span class="filter-count" id="countNormalStock">0</span>
+                </button>
             </div>
         </div>
 

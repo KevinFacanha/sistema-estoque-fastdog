@@ -87,6 +87,7 @@ let allProducts = []
 let filteredProducts = []
 let realtimeChannel = null
 let isUpdating = false
+let currentFilter = 'all' // Filtro atual: 'all', 'low', 'normal'
 
 // Elementos DOM
 const searchInput = document.getElementById('searchInput')
@@ -98,6 +99,14 @@ const errorContainer = document.getElementById('errorContainer')
 const noResultsContainer = document.getElementById('noResultsContainer')
 const lastUpdateContainer = document.getElementById('lastUpdateContainer')
 const lastUpdateTime = document.getElementById('lastUpdateTime')
+
+// Elementos dos filtros
+const filterAll = document.getElementById('filterAll')
+const filterLowStock = document.getElementById('filterLowStock')
+const filterNormalStock = document.getElementById('filterNormalStock')
+const countAll = document.getElementById('countAll')
+const countLowStock = document.getElementById('countLowStock')
+const countNormalStock = document.getElementById('countNormalStock')
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
@@ -136,6 +145,37 @@ function setupEventListeners() {
     if (searchInput) {
         searchInput.addEventListener('input', handleSearch)
     }
+    
+    // Event listeners para os filtros
+    if (filterAll) {
+        filterAll.addEventListener('click', () => setFilter('all'))
+    }
+    if (filterLowStock) {
+        filterLowStock.addEventListener('click', () => setFilter('low'))
+    }
+    if (filterNormalStock) {
+        filterNormalStock.addEventListener('click', () => setFilter('normal'))
+    }
+}
+
+// Configurar filtro ativo
+function setFilter(filter) {
+    currentFilter = filter
+    
+    // Atualizar classes dos botões
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active')
+    })
+    
+    const activeBtn = document.querySelector(`[data-filter="${filter}"]`)
+    if (activeBtn) {
+        activeBtn.classList.add('active')
+    }
+    
+    // Atualizar produtos filtrados e renderizar
+    updateFilteredProductsAndRender()
+    
+    console.log(`🔍 Filtro alterado para: ${filter}`)
 }
 
 // Limpar cache local
@@ -291,25 +331,68 @@ function isTestProduct(nome) {
 // Atualizar produtos filtrados e renderizar
 function updateFilteredProductsAndRender() {
     updateFilteredProducts()
+    updateFilterCounts()
     renderProducts()
     updateLastUpdateTime()
 }
 
-// Atualizar produtos filtrados baseado na busca atual
+// Atualizar produtos filtrados baseado na busca e filtro atuais
 function updateFilteredProducts() {
     const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : ''
     
-    if (searchTerm === '') {
-        // Filtrar produtos de teste mesmo sem busca
-        filteredProducts = allProducts.filter(product => !isTestProduct(product.nome))
-    } else {
-        filteredProducts = allProducts.filter(product =>
-            !isTestProduct(product.nome) && 
+    // Primeiro, filtrar produtos de teste
+    let products = allProducts.filter(product => !isTestProduct(product.nome))
+    
+    // Aplicar filtro de busca se houver
+    if (searchTerm !== '') {
+        products = products.filter(product =>
             product.nome.toLowerCase().includes(searchTerm)
         )
     }
     
-    console.log(`🔍 Produtos filtrados: ${filteredProducts.length} de ${allProducts.length}`)
+    // Aplicar filtro de estoque
+    switch (currentFilter) {
+        case 'low':
+            products = products.filter(product => 
+                product.estoque_atual < product.estoque_minimo
+            )
+            break
+        case 'normal':
+            products = products.filter(product => 
+                product.estoque_atual >= product.estoque_minimo
+            )
+            break
+        case 'all':
+        default:
+            // Manter todos os produtos já filtrados
+            break
+    }
+    
+    filteredProducts = products
+    
+    console.log(`🔍 Produtos filtrados: ${filteredProducts.length} de ${allProducts.length} (filtro: ${currentFilter}, busca: "${searchTerm}")`)
+}
+
+// Atualizar contadores dos filtros
+function updateFilterCounts() {
+    const cleanProducts = allProducts.filter(product => !isTestProduct(product.nome))
+    
+    const lowStockCount = cleanProducts.filter(product => 
+        product.estoque_atual < product.estoque_minimo
+    ).length
+    
+    const normalStockCount = cleanProducts.filter(product => 
+        product.estoque_atual >= product.estoque_minimo
+    ).length
+    
+    const totalCount = cleanProducts.length
+    
+    // Atualizar contadores na interface
+    if (countAll) countAll.textContent = totalCount
+    if (countLowStock) countLowStock.textContent = lowStockCount
+    if (countNormalStock) countNormalStock.textContent = normalStockCount
+    
+    console.log(`📊 Contadores atualizados: Total(${totalCount}), Baixo(${lowStockCount}), Normal(${normalStockCount})`)
 }
 
 // Atualizar indicador de última atualização
@@ -375,8 +458,7 @@ async function loadProducts() {
         console.log(`✅ ${allProducts.length} produtos válidos carregados`)
         console.log('📋 Produtos carregados:', allProducts.map(p => p.nome))
         
-        renderProducts()
-        updateLastUpdateTime()
+        updateFilteredProductsAndRender()
         
     } catch (error) {
         console.error('❌ Erro ao carregar produtos:', error)
@@ -554,8 +636,7 @@ window.toggleAvailability = toggleAvailability
 
 // Busca de produtos
 function handleSearch() {
-    updateFilteredProducts()
-    renderProducts()
+    updateFilteredProductsAndRender()
 }
 
 // Detectar se está em mobile
@@ -565,12 +646,28 @@ function isMobile() {
 
 // Renderizar produtos na tabela ou cards
 function renderProducts() {
-    console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela`)
+    console.log(`🎨 Renderizando ${filteredProducts.length} produtos na tela (filtro: ${currentFilter})`)
     
     if (filteredProducts.length === 0) {
         if (productsTable) productsTable.style.display = 'none'
         if (cardsContainer) cardsContainer.innerHTML = ''
-        if (noResultsContainer) noResultsContainer.style.display = 'block'
+        if (noResultsContainer) {
+            const searchTerm = searchInput ? searchInput.value.trim() : ''
+            const filterText = currentFilter === 'low' ? 'com estoque baixo' : 
+                              currentFilter === 'normal' ? 'com estoque normal' : ''
+            
+            let message = 'Nenhum produto encontrado'
+            if (searchTerm && filterText) {
+                message = `Nenhum produto ${filterText} encontrado para "${searchTerm}"`
+            } else if (searchTerm) {
+                message = `Nenhum produto encontrado para "${searchTerm}"`
+            } else if (filterText) {
+                message = `Nenhum produto ${filterText} encontrado`
+            }
+            
+            noResultsContainer.textContent = message
+            noResultsContainer.style.display = 'block'
+        }
         return
     }
 
@@ -591,7 +688,7 @@ function renderTable() {
     if (!productsTableBody) return
     
     productsTableBody.innerHTML = filteredProducts.map(product => {
-        const isLowStock = product.estoque_atual <= product.estoque_minimo
+        const isLowStock = product.estoque_atual < product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
         
         return `
@@ -641,7 +738,7 @@ function renderCards() {
     if (!cardsContainer) return
     
     cardsContainer.innerHTML = filteredProducts.map(product => {
-        const isLowStock = product.estoque_atual <= product.estoque_minimo
+        const isLowStock = product.estoque_atual < product.estoque_minimo
         const stockClass = isLowStock ? 'low-stock' : ''
         const cardClass = isLowStock ? 'low-stock-card' : ''
         
