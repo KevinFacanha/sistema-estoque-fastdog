@@ -12,12 +12,37 @@ console.log('- Key:', supabaseKey ? '✅ Configurada' : '❌ Não encontrada')
 // Declarar supabase como null inicialmente
 let supabase = null
 
-// Verificar se as variáveis estão definidas
-if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ ERRO: Variáveis de ambiente do Supabase não configuradas!')
-    console.error('Configure na Vercel:')
-    console.error('- VITE_SUPABASE_URL')
-    console.error('- VITE_SUPABASE_ANON_KEY')
+// Função para verificar se as variáveis são válidas (não são placeholders)
+function areSupabaseVarsValid(url, key) {
+    if (!url || !key) return false
+    
+    // Verificar se são placeholders
+    const placeholderPatterns = [
+        'your_supabase_url_here',
+        'your_supabase_anon_key_here',
+        'YOUR_SUPABASE_URL',
+        'YOUR_SUPABASE_ANON_KEY'
+    ]
+    
+    if (placeholderPatterns.includes(url) || placeholderPatterns.includes(key)) {
+        return false
+    }
+    
+    // Verificar se a URL tem formato válido de Supabase
+    try {
+        const urlObj = new URL(url)
+        return urlObj.hostname.includes('supabase') || urlObj.hostname.includes('localhost')
+    } catch {
+        return false
+    }
+}
+
+// Verificar se as variáveis estão definidas e são válidas
+if (!areSupabaseVarsValid(supabaseUrl, supabaseKey)) {
+    console.error('❌ ERRO: Variáveis de ambiente do Supabase não configuradas ou são placeholders!')
+    console.error('Configure na Vercel ou no arquivo .env:')
+    console.error('- VITE_SUPABASE_URL (deve ser uma URL válida do Supabase)')
+    console.error('- VITE_SUPABASE_ANON_KEY (deve ser uma chave válida)')
     
     // Mostrar erro na interface
     document.addEventListener('DOMContentLoaded', () => {
@@ -26,12 +51,17 @@ if (!supabaseUrl || !supabaseKey) {
             errorContainer.innerHTML = `
                 <div class="error">
                     <h3>❌ Erro de Configuração</h3>
-                    <p>As variáveis de ambiente do Supabase não estão configuradas.</p>
-                    <p>Configure na Vercel:</p>
-                    <ul>
-                        <li><strong>VITE_SUPABASE_URL</strong></li>
-                        <li><strong>VITE_SUPABASE_ANON_KEY</strong></li>
-                    </ul>
+                    <p>As variáveis de ambiente do Supabase não estão configuradas corretamente.</p>
+                    <p><strong>Para configurar:</strong></p>
+                    <ol>
+                        <li>Acesse seu projeto no <a href="https://supabase.com/dashboard" target="_blank">Supabase Dashboard</a></li>
+                        <li>Vá em Settings → API</li>
+                        <li>Copie a URL do projeto e a chave anon/public</li>
+                        <li>Configure no arquivo .env:</li>
+                    </ol>
+                    <pre>VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-anon-aqui</pre>
+                    <p><em>Após configurar, recarregue a página.</em></p>
                 </div>
             `
         }
@@ -42,8 +72,14 @@ if (!supabaseUrl || !supabaseKey) {
         }
     })
 } else {
-    // Só criar o cliente se as variáveis estiverem configuradas
-    supabase = createClient(supabaseUrl, supabaseKey)
+    // Só criar o cliente se as variáveis estiverem configuradas e válidas
+    try {
+        supabase = createClient(supabaseUrl, supabaseKey)
+        console.log('✅ Cliente Supabase criado com sucesso')
+    } catch (error) {
+        console.error('❌ Erro ao criar cliente Supabase:', error)
+        supabase = null
+    }
 }
 
 // Estado da aplicação
@@ -68,8 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando aplicação...')
     
     // Verificar se as variáveis estão configuradas antes de continuar
-    if (!supabaseUrl || !supabaseKey || !supabase) {
-        console.error('❌ Não é possível inicializar sem as variáveis de ambiente')
+    if (!areSupabaseVarsValid(supabaseUrl, supabaseKey) || !supabase) {
+        console.error('❌ Não é possível inicializar sem as variáveis de ambiente válidas')
         return
     }
     
@@ -121,8 +157,8 @@ function setupRealtimeSubscription() {
     console.log('📡 Configurando Supabase Realtime...')
     
     // Verificar se as variáveis estão configuradas e o cliente existe
-    if (!supabaseUrl || !supabaseKey || !supabase) {
-        console.error('❌ Não é possível configurar realtime sem as variáveis de ambiente')
+    if (!areSupabaseVarsValid(supabaseUrl, supabaseKey) || !supabase) {
+        console.error('❌ Não é possível configurar realtime sem as variáveis de ambiente válidas')
         return
     }
     
@@ -305,8 +341,8 @@ async function loadProducts() {
         console.log('🔄 Carregando produtos diretamente do Supabase...')
         
         // Verificar se as variáveis estão configuradas e o cliente existe
-        if (!supabaseUrl || !supabaseKey || !supabase) {
-            throw new Error('Variáveis de ambiente do Supabase não configuradas')
+        if (!areSupabaseVarsValid(supabaseUrl, supabaseKey) || !supabase) {
+            throw new Error('Variáveis de ambiente do Supabase não configuradas corretamente')
         }
         
         // Testar conexão com o Supabase
