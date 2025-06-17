@@ -14,7 +14,10 @@ let supabase = null
 
 // Função para verificar se as variáveis são válidas (não são placeholders)
 function areSupabaseVarsValid(url, key) {
-    if (!url || !key) return false
+    if (!url || !key) {
+        console.log('❌ URL ou Key não definidas')
+        return false
+    }
     
     // Verificar se são placeholders
     const placeholderPatterns = [
@@ -25,14 +28,25 @@ function areSupabaseVarsValid(url, key) {
     ]
     
     if (placeholderPatterns.includes(url) || placeholderPatterns.includes(key)) {
+        console.log('❌ Detectados placeholders')
         return false
     }
     
-    // Verificar se a URL tem formato válido de Supabase
+    // Verificar se a URL tem formato válido
     try {
         const urlObj = new URL(url)
-        return urlObj.hostname.includes('supabase') || urlObj.hostname.includes('localhost')
-    } catch {
+        const isValidSupabaseUrl = urlObj.hostname.includes('supabase.co') || 
+                                  urlObj.hostname.includes('supabase.com') || 
+                                  urlObj.hostname.includes('localhost')
+        
+        console.log('🔍 Validação da URL:', {
+            hostname: urlObj.hostname,
+            isValid: isValidSupabaseUrl
+        })
+        
+        return isValidSupabaseUrl
+    } catch (error) {
+        console.log('❌ Erro ao validar URL:', error.message)
         return false
     }
 }

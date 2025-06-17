@@ -21,7 +21,9 @@ function areSupabaseVarsValid(url, key) {
     
     try {
         const urlObj = new URL(url)
-        return urlObj.hostname.includes('supabase') || urlObj.hostname.includes('localhost')
+        return urlObj.hostname.includes('supabase.co') || 
+               urlObj.hostname.includes('supabase.com') || 
+               urlObj.hostname.includes('localhost')
     } catch {
         return false
     }
